@@ -9,6 +9,14 @@ import firebase_admin
 from firebase_admin import credentials, firestore
 from datetime import datetime
 import urllib.parse
+@st.cache_resource
+def init_firebase():
+    if not firebase_admin._apps:
+        cred = credentials.Certificate(dict(st.secrets["firebase"]))
+        firebase_admin.initialize_app(cred)
+    return firestore.client()
+
+db = init_firebase()
 
 # Page config
 st.set_page_config(
@@ -73,7 +81,7 @@ def init_firebase():
     try:
         firebase_admin.get_app()
     except ValueError:
-        cred = credentials.Certificate('firebase-key.json')
+        
         firebase_admin.initialize_app(cred)
     return firestore.client()
 

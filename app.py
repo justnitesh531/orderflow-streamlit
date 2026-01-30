@@ -62,12 +62,14 @@ st.markdown("""
     }
     
     .whatsapp-message {
-        background-color: #dcf8c6;
+        background-color: #e8f5e9;
+        color: #1b5e20;
         padding: 15px;
         border-radius: 10px;
         font-family: monospace;
         white-space: pre-wrap;
-        border: 1px solid #25D366;
+        border: 2px solid #4caf50;
+        line-height: 1.6;
     }
 </style>
 """, unsafe_allow_html=True)

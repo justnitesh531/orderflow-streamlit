@@ -103,7 +103,22 @@ KEYWORDS_DATABASE = {
     "Beverages & Drinks": ["tea", "coffee", "juice", "water", "cold drink", "chai"],
     "Cleaning & Kitchen Supplies": ["tissue", "napkin", "detergent", "soap", "foil", "cleaner"]
 }
+def add_new_category(category_name, keywords_list):
+    """Add a new category to the database."""
+    if category_name not in KEYWORDS_DATABASE:
+        KEYWORDS_DATABASE[category_name] = keywords_list
+        return True
+    return False
 
+# Function to add item to existing category
+def add_item_to_category(category_name, item_name):
+    """Add an item keyword to existing category."""
+    if category_name in KEYWORDS_DATABASE:
+        item_lower = item_name.lower().strip()
+        if item_lower not in KEYWORDS_DATABASE[category_name]:
+            KEYWORDS_DATABASE[category_name].append(item_lower)
+            return True
+    return False
 def categorize_item(item_name):
     if not item_name:
         return "Uncategorized"
@@ -455,42 +470,72 @@ def add_items_screen():
             st.rerun()
         return
     
-    with st.form("add_item_form", clear_on_submit=True):
-        item_name = st.text_input("Item Name *", placeholder="e.g., Milk, Chicken, Onions")
-        
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            quantity = st.text_input("Quantity", placeholder="e.g., 10L, 5kg")
-        
-        with col2:
-            added_by = st.text_input("Added By", value=st.session_state.user_name)
-        
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            submitted = st.form_submit_button("➕ Add Item", type="primary", use_container_width=True)
-        
-        with col2:
-            cancel = st.form_submit_button("Cancel", use_container_width=True)
-        
-        if submitted:
-            if not item_name or not item_name.strip():
-                st.error("❌ Please enter item name")
+    # BULK ADD MODE
+    st.subheader("📝 Bulk Add Items")
+    st.caption("Enter items one per line in format: Item Name, Quantity")
+    st.caption("Example: Milk, 10L")
+    
+    bulk_items = st.text_area(
+        "Items List",
+        placeholder="Milk, 10L\nChicken, 5kg\nOnion, 3kg\nButter, 2kg",
+        height=200
+    )
+    
+    added_by = st.text_input("Added By", value=st.session_state.user_name)
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        if st.button("➕ Add All Items", type="primary", use_container_width=True):
+            if not bulk_items or not bulk_items.strip():
+                st.error("❌ Please enter at least one item")
             else:
-                category = draft_manager.add_item(item_name, quantity, added_by)
+                lines = bulk_items.strip().split('\n')
+                added_count = 0
                 
-                if category == "Uncategorized":
-                    st.warning(f"⚠️ {item_name} added but needs categorization")
+                for line in lines:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    
+                    # Parse line
+                    if ',' in line:
+                        parts = line.split(',', 1)
+                        item_name = parts[0].strip()
+                        quantity = parts[1].strip() if len(parts) > 1 else ""
+                    else:
+                        item_name = line.strip()
+                        quantity = ""
+                    
+                    if item_name:
+                        draft_manager.add_item(item_name, quantity, added_by)
+                        added_count += 1
+                
+                if added_count > 0:
+                    st.success(f"✅ Added {added_count} items to draft!")
+                    st.balloons()
+                    st.rerun()
                 else:
-                    st.success(f"✅ {item_name} added to {category}")
-                
-                st.balloons()
-        
-        if cancel:
+                    st.error("❌ No valid items found")
+    
+    with col2:
+        if st.button("Cancel", use_container_width=True):
             st.session_state.current_page = "home"
             st.rerun()
-
+    
+    st.markdown("---")
+    
+    # SINGLE ADD MODE (Optional)
+    with st.expander("➕ Add Single Item", expanded=False):
+        with st.form("add_single_item", clear_on_submit=True):
+            item_name = st.text_input("Item Name *")
+            quantity = st.text_input("Quantity")
+            
+            if st.form_submit_button("Add Item"):
+                if item_name:
+                    draft_manager.add_item(item_name, quantity, added_by)
+                    st.success(f"✅ {item_name} added!")
+                    st.rerun()
 # ============================================
 # VIEW DRAFT SCREEN
 # ============================================
@@ -633,8 +678,73 @@ def review_screen():
     
     st.markdown("---")
     
+    # HANDLE UNCATEGORIZED ITEMS
     if uncategorized > 0:
-        st.warning(f"⚠️ {uncategorized} items are uncategorized.")
+        st.subheader("⚠️ Fix Uncategorized Items")
+        
+        uncategorized_items = [item for item in items if item['category'] == 'Uncategorized']
+        
+        for idx, item in enumerate(uncategorized_items):
+            with st.expander(f"Fix: {item['name']}", expanded=True):
+                st.write(f"**Item:** {item['name']}")
+                st.write(f"**Quantity:** {item['quantity']}")
+                
+                col1, col2 = st.columns(2)
+                
+                with col1:
+                    st.markdown("**Option 1: Add to Existing Category**")
+                    existing_categories = list(KEYWORDS_DATABASE.keys())
+                    selected_category = st.selectbox(
+                        "Choose Category",
+                        existing_categories,
+                        key=f"cat_select_{idx}"
+                    )
+                    
+                    if st.button("Add to Category", key=f"add_existing_{idx}"):
+                        # Add item keyword to category
+                        add_item_to_category(selected_category, item['name'])
+                        
+                        # Re-categorize the item in draft
+                        draft = draft_manager.get_draft()
+                        all_items = draft.get('items', [])
+                        
+                        for draft_item in all_items:
+                            if draft_item['name'] == item['name'] and draft_item['category'] == 'Uncategorized':
+                                draft_item['category'] = selected_category
+                        
+                        draft_manager.draft_ref.update({'items': all_items})
+                        st.success(f"✅ {item['name']} added to {selected_category}")
+                        st.rerun()
+                
+                with col2:
+                    st.markdown("**Option 2: Create New Category**")
+                    new_category_name = st.text_input(
+                        "New Category Name",
+                        placeholder="e.g., Frozen Foods",
+                        key=f"new_cat_{idx}"
+                    )
+                    
+                    if st.button("Create Category", key=f"create_new_{idx}"):
+                        if new_category_name and new_category_name.strip():
+                            # Create new category with this item
+                            item_lower = item['name'].lower().strip()
+                            add_new_category(new_category_name.strip(), [item_lower])
+                            
+                            # Re-categorize the item in draft
+                            draft = draft_manager.get_draft()
+                            all_items = draft.get('items', [])
+                            
+                            for draft_item in all_items:
+                                if draft_item['name'] == item['name'] and draft_item['category'] == 'Uncategorized':
+                                    draft_item['category'] = new_category_name.strip()
+                            
+                            draft_manager.draft_ref.update({'items': all_items})
+                            st.success(f"✅ Created category '{new_category_name}' with {item['name']}")
+                            st.rerun()
+                        else:
+                            st.error("❌ Please enter category name")
+        
+        st.markdown("---")
     
     st.subheader("Actions")
     

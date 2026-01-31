@@ -672,11 +672,41 @@ def review_screen():
         
         with st.expander(f"{icon} {category} ({len(cat_items)} items)", expanded=True):
             for item in cat_items:
-                col1, col2 = st.columns([3, 1])
+                # Find item index in full items list
+                item_idx = items.index(item)
+                
+                col1, col2, col3 = st.columns([3, 2, 1])
+                
                 with col1:
-                    st.write(f"**{item['name']}** - {item['quantity']}")
+                    st.write(f"**{item['name']}**")
+                    st.caption(f"Added by {item['added_by']}")
+                
                 with col2:
-                    st.caption(f"by {item['added_by']}")
+                    # Editable quantity
+                    new_quantity = st.text_input(
+                        "Quantity",
+                        value=item['quantity'],
+                        key=f"qty_{item_idx}",
+                        label_visibility="collapsed"
+                    )
+                    
+                    if new_quantity != item['quantity']:
+                        if st.button("💾 Save", key=f"save_{item_idx}"):
+                            draft = draft_manager.get_draft()
+                            all_items = draft.get('items', [])
+                            all_items[item_idx]['quantity'] = new_quantity
+                            draft_manager.draft_ref.update({'items': all_items})
+                            st.success("✅ Quantity updated")
+                            st.rerun()
+                
+                with col3:
+                    if st.button("🗑️", key=f"del_review_{item_idx}"):
+                        draft = draft_manager.get_draft()
+                        all_items = draft.get('items', [])
+                        all_items.pop(item_idx)
+                        draft_manager.draft_ref.update({'items': all_items})
+                        st.success("✅ Item removed")
+                        st.rerun()
     
     st.markdown("---")
     
@@ -815,18 +845,45 @@ def vendors_screen():
     else:
         for vendor in vendors:
             with st.expander(f"📞 {vendor['vendor_name']} - {vendor['category']}", expanded=False):
-                col1, col2 = st.columns([3, 1])
                 
-                with col1:
-                    st.write(f"**Category:** {vendor['category']}")
-                    st.write(f"**Phone:** {vendor['phone']}")
-                    st.write(f"**Type:** {vendor.get('vendor_type', 'WhatsApp')}")
+                # Show current details
+                st.markdown("**Current Details:**")
+                st.write(f"• **Name:** {vendor['vendor_name']}")
+                st.write(f"• **Category:** {vendor['category']}")
+                st.write(f"• **Phone:** {vendor['phone']}")
+                st.write(f"• **Type:** {vendor.get('vendor_type', 'WhatsApp')}")
                 
-                with col2:
-                    if st.button("🗑️ Delete", key=f"del_vendor_{vendor['id']}"):
-                        vendor_manager.delete_vendor(vendor['id'])
-                        st.success("Vendor deleted")
-                        st.rerun()
+                st.markdown("---")
+                
+                # Edit form
+                st.markdown("**Edit Vendor:**")
+                
+                with st.form(f"edit_vendor_{vendor['id']}"):
+                    new_name = st.text_input("Vendor Name", value=vendor['vendor_name'])
+                    new_phone = st.text_input("Phone Number", value=vendor['phone'])
+                    
+                    categories = list(KEYWORDS_DATABASE.keys())
+                    current_cat_index = categories.index(vendor['category']) if vendor['category'] in categories else 0
+                    new_category = st.selectbox("Category", categories, index=current_cat_index)
+                    
+                    col1, col2 = st.columns(2)
+                    
+                    with col1:
+                        if st.form_submit_button("💾 Save Changes", use_container_width=True):
+                            # Update vendor
+                            vendor_manager.vendors_ref.document(vendor['id']).update({
+                                'vendor_name': new_name,
+                                'phone': new_phone,
+                                'category': new_category
+                            })
+                            st.success("✅ Vendor updated")
+                            st.rerun()
+                    
+                    with col2:
+                        if st.form_submit_button("🗑️ Delete Vendor", use_container_width=True):
+                            vendor_manager.delete_vendor(vendor['id'])
+                            st.success("✅ Vendor deleted")
+                            st.rerun()
 
 # ============================================
 # SEND ORDERS SCREEN
@@ -958,6 +1015,112 @@ def history_screen():
                     st.write(f"  • {item['name']} - {item['quantity']}")
 
 # ============================================
+# CATEGORY MANAGEMENT SCREEN
+# ============================================
+
+def categories_screen():
+    st.title("📂 Category Management")
+    
+    if st.session_state.user_role != "Owner":
+        st.error("❌ Only owners can manage categories")
+        if st.button("← Back"):
+            st.session_state.current_page = "home"
+            st.rerun()
+        return
+    
+    st.subheader("All Categories & Items")
+    
+    # Display all categories
+    for category, keywords in KEYWORDS_DATABASE.items():
+        with st.expander(f"📁 {category} ({len(keywords)} items)", expanded=False):
+            st.caption("Items in this category:")
+            
+            # Show current keywords
+            keywords_display = ", ".join(keywords[:10])
+            if len(keywords) > 10:
+                keywords_display += f"... (+{len(keywords) - 10} more)"
+            st.write(keywords_display)
+            
+            # Add new item to this category
+            with st.form(f"add_to_{category}"):
+                new_item = st.text_input("Add new item keyword", placeholder="e.g., paneer, yogurt")
+                
+                if st.form_submit_button("➕ Add to Category"):
+                    if new_item and new_item.strip():
+                        item_lower = new_item.lower().strip()
+                        if item_lower not in keywords:
+                            KEYWORDS_DATABASE[category].append(item_lower)
+                            st.success(f"✅ Added '{new_item}' to {category}")
+                            st.rerun()
+                        else:
+                            st.warning(f"⚠️ '{new_item}' already exists in this category")
+                    else:
+                        st.error("❌ Please enter an item name")
+    
+    st.markdown("---")
+    
+    # Create new category
+    st.subheader("➕ Create New Category")
+    
+    with st.form("create_new_category"):
+        new_cat_name = st.text_input("Category Name", placeholder="e.g., Frozen Foods")
+        first_item = st.text_input("First Item (optional)", placeholder="e.g., ice cream")
+        
+        if st.form_submit_button("Create Category"):
+            if new_cat_name and new_cat_name.strip():
+                if new_cat_name.strip() not in KEYWORDS_DATABASE:
+                    keywords_list = [first_item.lower().strip()] if first_item else []
+                    KEYWORDS_DATABASE[new_cat_name.strip()] = keywords_list
+                    st.success(f"✅ Created category '{new_cat_name}'")
+                    st.rerun()
+                else:
+                    st.error(f"❌ Category '{new_cat_name}' already exists")
+            else:
+                st.error("❌ Please enter category name")
+    
+    st.markdown("---")
+    
+    # Move items between categories
+    st.subheader("🔄 Move Items Between Categories")
+    
+    with st.form("move_item_form"):
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            # Get all items from all categories
+            all_items = []
+            for cat, items in KEYWORDS_DATABASE.items():
+                for item in items:
+                    all_items.append(f"{item} ({cat})")
+            
+            selected_item = st.selectbox("Select Item", sorted(all_items))
+        
+        with col2:
+            from_category = st.selectbox("From Category", list(KEYWORDS_DATABASE.keys()))
+        
+        with col3:
+            to_category = st.selectbox("To Category", list(KEYWORDS_DATABASE.keys()))
+        
+        if st.form_submit_button("Move Item"):
+            if from_category != to_category:
+                # Extract item name
+                item_name = selected_item.split(" (")[0]
+                
+                # Remove from old category
+                if item_name in KEYWORDS_DATABASE[from_category]:
+                    KEYWORDS_DATABASE[from_category].remove(item_name)
+                    
+                    # Add to new category
+                    if item_name not in KEYWORDS_DATABASE[to_category]:
+                        KEYWORDS_DATABASE[to_category].append(item_name)
+                    
+                    st.success(f"✅ Moved '{item_name}' from {from_category} to {to_category}")
+                    st.rerun()
+                else:
+                    st.error("❌ Item not found in source category")
+            else:
+                st.warning("⚠️ Please select different categories")
+# ============================================
 # MAIN APP
 # ============================================
 
@@ -1014,6 +1177,10 @@ def main():
             if st.button("📜 History", use_container_width=True):
                 st.session_state.current_page = "history"
                 st.rerun()
+
+	    if st.button("📂 Categories", use_container_width=True):
+                st.session_state.current_page = "categories"
+                st.rerun()
         
         st.markdown("---")
         
@@ -1040,6 +1207,8 @@ def main():
         send_orders_screen()
     elif st.session_state.current_page == "history":
         history_screen()
+    elif st.session_state.current_page == "categories":
+        categories_screen()
 
 if __name__ == "__main__":
     main()

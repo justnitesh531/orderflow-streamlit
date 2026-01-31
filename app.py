@@ -1178,9 +1178,10 @@ def main():
                 st.session_state.current_page = "history"
                 st.rerun()
 
-	    if st.button("📂 Categories", use_container_width=True):
-                st.session_state.current_page = "categories"
-                st.rerun()
+	            if st.button("📂 Categories", use_container_width=True):
+            st.session_state.current_page = "categories"
+            st.rerun()
+
         
         st.markdown("---")
         

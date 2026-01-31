@@ -1031,15 +1031,34 @@ def categories_screen():
     st.subheader("All Categories & Items")
     
     # Display all categories
+    # Display all categories
     for category, keywords in KEYWORDS_DATABASE.items():
         with st.expander(f"📁 {category} ({len(keywords)} items)", expanded=False):
+            
+            # Display items with delete buttons
             st.caption("Items in this category:")
             
-            # Show current keywords
-            keywords_display = ", ".join(keywords[:10])
-            if len(keywords) > 10:
-                keywords_display += f"... (+{len(keywords) - 10} more)"
-            st.write(keywords_display)
+            if len(keywords) == 0:
+                st.info("No items in this category yet")
+            else:
+                # Show items in a grid
+                cols_per_row = 3
+                rows = [keywords[i:i + cols_per_row] for i in range(0, len(keywords), cols_per_row)]
+                
+                for row in rows:
+                    cols = st.columns(cols_per_row)
+                    for idx, item in enumerate(row):
+                        with cols[idx]:
+                            col1, col2 = st.columns([3, 1])
+                            with col1:
+                                st.write(f"• {item}")
+                            with col2:
+                                if st.button("🗑️", key=f"del_{category}_{item}"):
+                                    KEYWORDS_DATABASE[category].remove(item)
+                                    st.success(f"✅ Deleted '{item}'")
+                                    st.rerun()
+            
+            st.markdown("---")
             
             # Add new item to this category
             with st.form(f"add_to_{category}"):
